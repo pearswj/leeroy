@@ -7,6 +7,8 @@ from werkzeug.exceptions import BadRequest, NotFound
 
 from . import github, jenkins
 
+#from datetime import datetime
+
 base = Blueprint("base", __name__)
 
 
@@ -55,21 +57,48 @@ def jenkins_notification():
         logging.warn(err_msg)
         raise NotFound(err_msg)
 
-    desc_prefix = "Jenkins build '{0}' #{1}".format(jenkins_name,
-                                                    jenkins_number)
+    #desc_prefix = "Jenkins build '{0}' #{1}".format(jenkins_name,
+    #                                                jenkins_number)
+    desc_prefix = "Build #{0}".format(jenkins_number)
+
+    # replace branch name with sha and check for auto-merge commit
+    commit = github.get_commit(current_app, repo_config,
+                               git_base_repo, git_sha1)
+    if git_sha1 != commit["sha"]:
+        git_sha1 = commit["sha"]
+    parents = [p["sha"] for p in commit["parents"]]
+    message = "Merge {1} into {0}"
+    if len(parents) > 1 and \
+       commit["commit"]["message"] == message.format(parents[0], parents[1]):
+    #if commit["message"].startswith("Merge"): # TODO: more robust method
+        #git_sha1 = commit["parents"][1]["sha"] # second commit ref
+        git_sha1 = parents[1] # second commit ref
+        logging.debug("Parent of auto-merge commit found: " + git_sha1)
 
     if phase == "STARTED":
         github_state = "pending"
-        github_desc = desc_prefix + " is running"
+        github_desc = desc_prefix + " has started"
     else:
         status = data["build"]["status"]
 
+        # build duration
+        build_info = jenkins.get_build(current_app,
+                          repo_config,
+                          jenkins_number)
+        #logging.debug(build_info)
+        duration = round(int(build_info["duration"]) * 0.001)
+        #curr_status = github.get_status(current_app, repo_config, git_base_repo, git_sha1).json
+	#start_time = curr_status[0]["created_at"]
+        #start_time = datetime.strptime(start_time, "%Y-%m-%dT%H:%M:%SZ")
+        #duration = (datetime.now() - start_time).seconds % (60*60)
+
         if status == "SUCCESS":
             github_state = "success"
-            github_desc = desc_prefix + " has succeeded"
+            #github_desc = desc_prefix + " has succeeded"
+            github_desc = desc_prefix + " succeeded in {0:.0f}s".format(duration)
         elif status == "FAILURE" or status == "UNSTABLE":
             github_state = "failure"
-            github_desc = desc_prefix + " has failed"
+            github_desc = desc_prefix + " failed in {0:.0f}s".format(duration)
         elif status == "ABORTED":
             github_state = "error"
             github_desc = desc_prefix + " has encountered an error"

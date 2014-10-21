@@ -9,6 +9,8 @@ import warnings
 github_status_url = "/repos/{repo_name}/statuses/{sha}"
 github_hooks_url = "/repos/{repo_name}/hooks"
 github_commits_url = "/repos/{repo_name}/pulls/{number}/commits"
+github_commit_url = "/repos/{repo_name}/commits/{sha}"
+github_merge_url = "/repos/{repo_name}/commits/refs/pull/{number}/merge"
 
 # Use requests.Session() objects keyed by github_repo to handle GitHub API
 # authentication details (token vs user/pass) and SSL trust options.
@@ -17,6 +19,7 @@ request_sessions = {}
 BUILD_COMMITS_ALL = "ALL"
 BUILD_COMMITS_LAST = "LAST"
 BUILD_COMMITS_NEW = "NEW"
+BUILD_COMMITS_MERGE = "MERGE"
 
 
 def get_api_url(app, repo_config, url):
@@ -111,11 +114,38 @@ def get_commits(app, repo_config, pull_request):
 
         return head_repo_name, commits
     elif build_commits == BUILD_COMMITS_LAST:
+        logging.debug("Getting HEAD commit for pull request #{0}".format(pull_request["number"]))
         return head_repo_name, [pull_request["head"]["sha"]]
+    elif build_commits == BUILD_COMMITS_MERGE:
+        logging.debug("Getting auto-merge commit for pull request #{0}".format(pull_request["number"]))
+        if pull_request["merge_commit_sha"]:
+            return head_repo_name, [pull_request["merge_commit_sha"]]
+        
+        number = pull_request["number"]
+        url = get_api_url(app, repo_config, github_merge_url).format(
+            repo_name=base_repo_name,
+            number=number)
+        s = get_session_for_repo(app, repo_config)
+        response = s.get(url)
+        if response.status_code != 200:
+            logging.warning("Pull request {0} not mergeable. Building HEAD instead".format(number))
+            return head_repo_name, [pull_request["head"]["sha"]]
+        response = response.json
+        logging.debug(response["sha"])
+        return head_repo_name, [response["sha"]]
     else:
         logging.error("Invalid value '%s' for BUILD_COMMITS for repo: %s",
                       build_commits, base_repo_name)
 
+def get_commit(app, repo_config, repo_name, sha):
+    url = get_api_url(app, repo_config, github_commit_url).format(
+        repo_name=repo_name,
+        sha=sha)
+    logging.debug("Getting commit info from Github: " + url)
+    s = get_session_for_repo(app, repo_config)
+    response = s.get(url)
+    logging.debug(response)
+    return response.json
 
 def update_status(app, repo_config, repo_name, sha, state, desc,
                   target_url=None):
@@ -124,7 +154,8 @@ def update_status(app, repo_config, repo_name, sha, state, desc,
         sha=sha)
 
     params = dict(state=state,
-                  description=desc)
+                  description=desc,
+                  context="continuous-integration/jenkins")
 
     if target_url:
         params["target_url"] = target_url
@@ -134,8 +165,8 @@ def update_status(app, repo_config, repo_name, sha, state, desc,
     logging.debug("Setting status on %s %s to %s", repo_name, sha, state)
 
     s = get_session_for_repo(app, repo_config)
-    s.post(url, data=json.dumps(params), headers=headers)
-
+    response = s.post(url, data=json.dumps(params), headers=headers)
+    logging.debug(response)
 
 def get_status(app, repo_config, repo_name, sha):
     """Gets the status of a commit.
@@ -155,6 +186,7 @@ def get_status(app, repo_config, repo_name, sha):
     logging.debug("Getting status for %s %s", repo_name, sha)
     s = get_session_for_repo(app, repo_config)
     response = s.get(url)
+    #logging.debug(response)
     return response
 
 
@@ -163,7 +195,15 @@ def has_status(app, repo_config, repo_name, sha):
 
     # The GitHub commit status API returns a JSON list, so `len()` checks
     # whether any statuses are set for the commit.
-    return bool(len(response.json))
+    resp = response.json
+    if len(resp):
+        if resp[0]["state"] == "pending":
+            return False
+        else:    
+            return True
+    else:
+        return False
+    #return bool(len(response.json))
 
 
 def register_github_hooks(app):

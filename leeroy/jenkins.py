@@ -8,6 +8,7 @@ build_path = "/job/{job_name}/buildWithParameters"\
     "&GIT_HEAD_REPO={git_head_repo}" \
     "&GIT_SHA1={git_sha1}" \
     "&GITHUB_URL={github_url}"
+jenkins_build_api = "/job/{job_name}/{build_number}/api/json"
 
 
 def get_jenkins_auth(app, repo_config):
@@ -38,3 +39,14 @@ def schedule_build(app, repo_config, head_repo_name, sha, html_url):
     response = requests.post(url, auth=get_jenkins_auth(app, repo_config))
     logging.debug("Jenkins responded with status code %s",
                   response.status_code)
+
+def get_build(app, repo_config, build_number):
+    job_name = repo_config["jenkins_job_name"]
+
+    url = get_jenkins_url(app, repo_config) + \
+        jenkins_build_api.format(job_name=job_name,
+                                 build_number=build_number)
+
+    logging.debug("Getting build info from Jenkins: %s", url)
+    response = requests.get(url, auth=get_jenkins_auth(app, repo_config))
+    return response.json

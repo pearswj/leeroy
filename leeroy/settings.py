@@ -27,7 +27,9 @@ GITHUB_TOKEN = ""
 
 # Jenkins configuration
 # JENKINS_USER and JENKINS_PASSWORD assume you're using basic HTTP
-# authentication, not Jenkins's built in auth system.
+# authentication. If you're using Jenkins's built in auth system use the user's
+# API token instead of the password. You can find this here:
+# JENKINS_URL/user/JENKINS_USER/configure
 JENKINS_URL = "https://jenkins.example.com"
 JENKINS_USER = "hudson"
 JENKINS_PASSWORD = ""
@@ -39,6 +41,8 @@ JENKINS_PASSWORD = ""
 # 'LAST': build only the last commit in the pull request.
 # 'NEW': build only commits that don't already have a commit status set.
 #        (default)
+# 'MERGE': build the auto-merge commit for the last commit in the pull request.
+#          TODO: revert to LAST if branch cannot be automatically merged.
 BUILD_COMMITS = 'NEW'
 
 # A list of dicts containing configuration for each GitHub repository &

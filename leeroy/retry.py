@@ -21,6 +21,10 @@ def main():
     repo_config = github.get_repo_config(app, args.repo)
     pull_request = github.get_pull_request(app, repo_config, args.pull_request)
     head_repo_name, shas = github.get_commits(app, repo_config, pull_request)
+    #head_repo_name = pull_request['head']['repo']['full_name']
+    #sha = pull_request['head']['sha'] # HEAD
+    #sha = pull_request['merge_commit_sha'] # MERGE
+    #sha = "pull/{0}/merge".format(args.pull_request)
     html_url = pull_request["html_url"]
     for sha in shas:
         schedule_build(app, repo_config, head_repo_name, sha, html_url)
